@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup as bs
 import time
 import re
-from private.privateManager import getKey
+from privateManager import getKey
 
 def login():
     imap = imaplib.IMAP4_SSL('imap.naver.com')
@@ -29,7 +29,8 @@ def getCurId():
     return id
 
 def getDateId(date):
-    date = date.split(',')[1].strip().split(' ')[:-2]
+    date = date.split(',')[1].strip().split(' ')[:-1]
+    hour = int(date[-1].split(':')[0])
     accsum = int(date[2])
     monthList = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     i = 0
@@ -39,6 +40,8 @@ def getDateId(date):
             break
     accsum = accsum * 12 + i
     accsum = accsum * 50 + int(date[0])
+    if hour + 9 >= 24:
+        accsum += 1
     return accsum
 
 def no_space(text):
@@ -52,6 +55,12 @@ def authentication(link):
     result = no_space(soup.find('div', {'class' : 'box-message'}).text)
     print_time(endWith = ' -> ')
     print(result)
+    return result != '만료된 인증 입니다.'
+
+def get_sleep_time():
+    now = time.localtime()
+    sleep_time = 24 * 60 * 60 + tick - (now.tm_hour * 60 + now.tm_min) * 60 + now.tm_sec
+    return sleep_time
 
 authSender = 'noreply@ruauth3.coursemos.kr'
 tick = 5
@@ -69,27 +78,33 @@ if __name__=='__main__':
             data = session.fetch(last_mail, '(RFC822)')[1]
             raw_mail = data[0][1]
             email_message = email.message_from_bytes(raw_mail, policy = policy.default)
-
+        except Exception as e:
+            print(f'error in part 1: {e}')
+            time.sleep(tick)
+            continue
+        try:
             # accessability
             if getDateId(email_message['Date']) == getCurId():
+                print("mail catch : True")
                 # authenticate
                 link = get_link(email_message)
-                authentication(link)
+                res = authentication(link)
                 # delete
                 session.store(last_mail, '+FLAGS', '\\Deleted')
                 session.expunge()
                 # set sleep time
-                now = time.localtime()
-                sleep_time = 24 * 60 * 60 + tick
-                sleep_time -= now.tm_hour * 60 * 60
-                sleep_time -= now.tm_min * 60
-                sleep_time -= now.tm_sec
-                print(f'sleep time: {sleep_time}')
-                time.sleep(sleep_time)
+                if res:
+                    sleep_time = get_sleep_time()
+                    print(f'sleep time: {sleep_time}')
+                    time.sleep(sleep_time)
+            else:
+                print(email_message['Date'])
             # logout
             session.close()
             session.logout()
         except Exception as e:
-            print(f'error: {e}')
-            pass
+            print(f'error in part 2: {e}')
+            time.sleep(tick)
+            continue
+        
         time.sleep(tick)
